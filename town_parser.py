@@ -4,6 +4,7 @@ import compression.gzip  # New canonical import in Python 3.14
 import sys
 import xml.etree.ElementTree as ET
 import re
+import os
 from FantasyNameGenerator.DnD import Aasimer, Dragonborn, Dwarf, Elf, Goblin, Gnome, Halfling, Human, Lizardfolk, Orc, Tiefling, Yuanti, HalfElf, HalfOrc
 
 print("Town Population Parser - Worldographer Compatible")
@@ -160,7 +161,7 @@ def display_population(town_population, options):
     random_ages = options.ages if options.ages else False
     random_names = options.names if options.names else False
 
-    print("\nTown Population Details:")
+    populous = "\nTown Population Summary:\n"
     for uuid, building in town_population.items():
         if len(building) <= 3:
             continue  # Skip buildings without population data
@@ -172,11 +173,11 @@ def display_population(town_population, options):
         del building["x"]
         del building["y"]
 
-        print(f"Building: {name}")
-        print(f"  Location: ({x:.2f}, {y:.2f})")
+        populous += f"Building: {name}\n"
+        populous += f"  Location: ({x:.2f}, {y:.2f})" + "\n"
 
         for key in building:
-            print(f"  {key}:")
+            populous += f"  {key}:" + "\n"
             for row in building[key].split('\n'):
                 row = row.replace('\t', ' ').replace('  ', ' ')
                 cols = row.split(',')
@@ -198,7 +199,7 @@ def display_population(town_population, options):
                         if age <= ages[race]["min"]:
                             occupation = "Child"
                     notes = cols[6].strip() if age > 5 else "Toddler"
-                    print(f"\t{name:<25} {race.capitalize():<10} {age:<3} {gender:<6} {occupation:<25} {notes}")
+                    populous += f"\t{name:<25} {race.capitalize():<10} {age:<3} {gender:<6} {occupation:<25} {notes}" + "\n"
                 else: # dealing with an item entry
                     item_row = re.sub('[ ,]*$', '', row)  # Remove trailing commas
                     cols = item_row.rsplit(',', maxsplit=2)
@@ -206,18 +207,19 @@ def display_population(town_population, options):
                     if len(cols) == 3:
                         if _m := re.match(r'^[\d ]+.p', cols[1]):
                             item_price = cols[1].replace(' ', '')
-                            print(f"\tQty: {cols[2]:<4} Price: {item_price:<8} {item_name}")
+                            populous += f"\tQty: {cols[2]:<4} Price: {item_price:<8} {item_name}" + "\n"
                         if _m := re.match(r'^[\d ]+.p', cols[2]):
                             item_price = cols[2].replace(' ', '')
-                            print(f"\tQty: {cols[1]:<4} Price: {item_price:<8} {item_name}")
+                            populous += f"\tQty: {cols[1]:<4} Price: {item_price:<8} {item_name}" + "\n"
                     elif len(cols) == 2:
                         if _m := re.match(r'^[\d ]+.p', cols[1]):
                             item_price = cols[1].replace(' ', '')
-                            print(f"\tQty: n/a  Price: {item_price:<8} {item_name}")
+                            populous += f"\tQty: n/a  Price: {item_price:<8} {item_name}" + "\n"
                     else:
-                        print(f"\t{cols}")
-        print("-" * 40)
+                        populous += f"\t{cols}" + "\n"
+        populous += "-" * 40 + "\n"
 
+    return populous
 
 if __name__ == "__main__":
     try:
@@ -228,9 +230,17 @@ if __name__ == "__main__":
         )
 
         parser.add_argument(
+            '--directory',
+            help="Directory where town files are located (optional)"
+        )
+        parser.add_argument(
             '-f', '--file', 
             required=True, 
             help="Path to the compressed file to read"
+        )
+        parser.add_argument(
+            '-o', '--output',
+            help="Path to save the uncompressed output (optional)"
         )
         parser.add_argument(
             '-r', '--replace',
@@ -262,8 +272,16 @@ if __name__ == "__main__":
 
         debug = args.debug
 
-        town = read_wxx_file(args.file)
+        if args.directory is not None:
+            work_dir = args.directory
+        elif os.environ.get('TOWN_DIR'):
+            work_dir = os.environ.get('TOWN_DIR')
+        else:
+            work_dir = os.getcwd()
+        
+        town_file = os.path.join(work_dir, args.file)
 
+        town = read_wxx_file(town_file)
         town_population = parse_wxx_file(town)
 
         if args.seed is not None:
@@ -274,7 +292,14 @@ if __name__ == "__main__":
             random.seed(int.from_bytes(seed, 'little'))
             print(f"Using seed based on filename: {int.from_bytes(seed, 'little')}")
 
-        display_population(town_population,args)
+        populous = display_population(town_population,args)
+        if args.output:
+            out_file = os.path.join(work_dir, args.output)
+            with open(out_file, 'w', encoding='utf-8') as out_fd:
+                out_fd.write(populous)
+            print(f"Population summary written to {out_file}")
+        else:
+            print(populous)
 
     except Exception as e:
         print(f"An error occurred: {e}", file=sys.stderr)
